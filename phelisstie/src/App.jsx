@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Mic, MessageSquare, History, Settings, Send, Grip, X, ChevronRight } from "lucide-react";
+import { Mic, MessageSquare, History, Settings, Send, ChevronRight, BrainCircuit } from "lucide-react";
+import NeuroPanel from "../phelisstie_ai/src/components/NeuroPanel.jsx";
+import { chat } from "../phelisstie_ai/src/services/neuroApi.js";
 
 /* ------------------------------------------------------------------ */
 /*  PHELLISSTIE — front-end de asistente multi-agente IA               */
@@ -15,18 +17,11 @@ const AGENTS = [
 ];
 
 const SEED_MESSAGES = [
-  { id: 1, from: "user", text: "Phellisstie, resume las métricas de la semana." },
   {
-    id: 2,
-    from: "agent",
-    agent: "analista",
-    text: "Tráfico +12%, conversión estable en 3.4%. Detecté una caída puntual el martes por un timeout del servidor.",
-  },
-  {
-    id: 3,
+    id: 1,
     from: "agent",
     agent: "nucleo",
-    text: "Delegando al agente de Código la revisión del timeout del martes.",
+    text: "Hola, soy Phellisstie. Escribe tu mensaje para conversar conmigo.",
   },
 ];
 
@@ -34,8 +29,10 @@ export default function PhellisstieApp() {
   const [navActive, setNavActive] = useState("chat");
   const [listening, setListening] = useState(false);
   const [messages, setMessages] = useState(SEED_MESSAGES);
+  const [chatHistory, setChatHistory] = useState([]);
   const [draft, setDraft] = useState("");
   const [activeAgent, setActiveAgent] = useState("nucleo");
+  const [isSending, setIsSending] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -62,21 +59,38 @@ export default function PhellisstieApp() {
     return () => clearTimeout(t);
   }, [listening, activeAgent]);
 
-  function sendDraft() {
-    if (!draft.trim()) return;
-    setMessages((m) => [...m, { id: Date.now(), from: "user", text: draft.trim() }]);
+  async function sendDraft() {
+    const text = draft.trim();
+    if (!text || isSending) return;
+    setMessages((m) => [...m, { id: Date.now(), from: "user", text }]);
     setDraft("");
-    setTimeout(() => {
+    setIsSending(true);
+    const userMessage = { role: "user", content: text };
+    try {
+      const { response } = await chat([...chatHistory, userMessage]);
+      setChatHistory((history) => [...history, userMessage, { role: "assistant", content: response }].slice(-20));
       setMessages((m) => [
         ...m,
         {
           id: Date.now() + 1,
           from: "agent",
           agent: activeAgent,
-          text: "Procesando tu solicitud con el equipo de agentes…",
+          text: response,
         },
       ]);
-    }, 700);
+    } catch (error) {
+      setMessages((m) => [
+        ...m,
+        {
+          id: Date.now() + 1,
+          from: "agent",
+          agent: activeAgent,
+          text: `No pude generar una respuesta: ${error.message}`,
+        },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
   }
 
   return (
@@ -299,6 +313,22 @@ export default function PhellisstieApp() {
           font-family:'Orbitron',sans-serif; font-size:14px; letter-spacing:.12em;
           color:#fff2f2; margin: 0 0 14px; text-transform:uppercase;
         }
+        .ph-neuro h2{
+          font-family:'Orbitron',sans-serif; font-size:16px; letter-spacing:.12em;
+          color:#fff2f2; margin:0 0 10px; text-transform:uppercase;
+        }
+        .ph-neuro p, .ph-neuro label{ color:var(--ash); }
+        .ph-neuro button, .ph-neuro input{
+          font:inherit; color:#f2dfe0; background:var(--panel-2);
+          border:1px solid var(--line); border-radius:8px; padding:9px 12px;
+        }
+        .ph-neuro button{ cursor:pointer; }
+        .ph-neuro button:disabled{ cursor:wait; opacity:.6; }
+        .ph-neuro input{ margin:8px 0; }
+        .ph-neuro pre{
+          overflow:auto; padding:12px; border-radius:8px;
+          background:var(--panel-2); color:#f2dfe0;
+        }
         .ph-hist-item{
           display:flex; align-items:center; justify-content:space-between;
           padding:12px 4px; border-bottom:1px solid var(--line); cursor:pointer;
@@ -337,6 +367,13 @@ export default function PhellisstieApp() {
         >
           <span className="ph-nav-icon-wrap"><MessageSquare size={16} /></span>
           <span className="ph-nav-label">Chat</span>
+        </button>
+        <button
+          className={`ph-nav-item ${navActive === "neuronal" ? "active" : ""}`}
+          onClick={() => setNavActive("neuronal")}
+        >
+          <span className="ph-nav-icon-wrap"><BrainCircuit size={16} /></span>
+          <span className="ph-nav-label">IA</span>
         </button>
         <button
           className={`ph-nav-item ${navActive === "historial" ? "active" : ""}`}
@@ -420,10 +457,11 @@ export default function PhellisstieApp() {
                 placeholder="Escribe un mensaje…"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendDraft()}
+                onKeyDown={(e) => e.key === "Enter" && !isSending && sendDraft()}
+                disabled={isSending}
               />
-              <button className="ph-send-btn" onClick={sendDraft} aria-label="Enviar">
-                <Send size={18} />
+              <button className="ph-send-btn" onClick={sendDraft} aria-label="Enviar" disabled={isSending}>
+                {isSending ? "…" : <Send size={18} />}
               </button>
             </div>
           </div>
@@ -446,6 +484,12 @@ export default function PhellisstieApp() {
                 <ChevronRight size={16} color="#7a5459" />
               </div>
             ))}
+          </div>
+        )}
+
+        {navActive === "neuronal" && (
+          <div className="ph-panel-alt">
+            <NeuroPanel />
           </div>
         )}
 
